@@ -177,7 +177,66 @@ public class XGBoostWithST {
 
 		System.out.println(dataset + "  rightRate:" + rightRate);
 	}
+	
+	
+	public static void XGTrainTime(String dataset, int num_class,
+			String trainPath, String testPath, String dateString)
+			throws XGBoostError, IOException {
 
+		DMatrix trainMat = new DMatrix(trainPath);
+		DMatrix testMat = new DMatrix(testPath);
+
+		// specify parameters
+		Map<String, Object> params = new HashMap<String, Object>();
+		params.put("silent", 1); // 为1的时候不会打印模型迭代的信息，为0可以看到打印的信息
+		params.put("nthread", 3); // 不使用的话系统会默认得到最大的线程数目
+		params.put("objective", "multi:softmax");// 目标函数值
+		params.put("num_class", num_class);//
+		params.put("max_depth", 10);// 树最大深度
+		params.put("min_child_weight", 3);
+		params.put("eval_metric", "merror");//
+
+		// specify watchList
+		HashMap<String, DMatrix> watches = new HashMap<String, DMatrix>();
+		watches.put("train", trainMat);
+		watches.put("test", testMat);
+		// train a booster
+		int round = 1000;
+
+		Params paramsToUse = new Params();
+		paramsToUse.setSTParams();
+		if (null == paramsToUse.boosterMap
+				|| (!paramsToUse.boosterMap.containsKey(dataset))) {
+			crossValidation(dataset, num_class, trainPath, testPath, dateString);
+		} else {
+			bestBooster = paramsToUse.boosterMap.get(dataset);
+			bestEta = paramsToUse.etaMap.get(dataset);
+		}
+
+		params.put("booster", bestBooster);// gblinear gbtree dart
+		params.put("eta", bestEta); // 为了防止过拟合，更新过程中用到的收缩步长。在每次提升计算之后，算法会直接获得新特征的权重
+
+		long d1 = System.nanoTime();
+		XGBoost.train(trainMat, params, round, watches, null, null);
+
+		long d2 = System.nanoTime();
+		// ArrayList<Shapelet> sh = transform.getShapelets();
+		System.out.print("Shapelet Selection Time\t"+(d2 - d1) * 0.000000001+ "\t");
+		
+		
+
+		String path = "results/trainTime" + dateString + ".txt";
+
+		File resultFile = new File(path);
+		if (!resultFile.exists()) {
+			resultFile.createNewFile();
+		}
+		FileWriter writer = new FileWriter(resultFile, true);
+
+		writer.write(dataset + "\t" + (d2 - d1) * 0.000000001
+				+ System.getProperty("line.separator"));
+		writer.close();
+	}
 	public static void crossValidation(String dataset, int num_class,
 			String trainPath, String testPath, String dateString)
 			throws XGBoostError, IOException {
@@ -213,6 +272,8 @@ public class XGBoostWithST {
 				params.put("booster", booster);// gblinear gbtree dart
 				crossString = XGBoost.crossValidation(trainMat, params, round,
 						5, null, null, null);
+				
+				
 
 				String lastString = crossString[crossString.length - 1];
 				int index = lastString.indexOf(":");
@@ -355,16 +416,115 @@ public class XGBoostWithST {
 				basicpredict(dataset, num_class, trainPath, testPath,
 						dateString);
 			}
-//			String[] boo={"gblinear","gbtree"};
-//			for(int i=0;i<2;i++){
-//				for(int j=0;j<30;j++){
-//					basicpredict(dataset, num_class, trainPath, testPath,
-//							dateString,0.01+0.01*j,boo[i]);
-//				}
-//			}
+
+		}
+
+	}
+	
+	public void time() throws XGBoostError, Exception {
+		String dataDir = "G:/数据/TSC Problems/";
+		Instances train, test;
+
+		SimpleDateFormat formatter = new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss");
+		String dateString = formatter.format(new Date());
+		String[] datasets = problems;
+		for (String dataset : datasets) {
+			train = ClassifierTools.loadData(dataDir + dataset + "/" + dataset
+					+ "_TRAIN");
+			test = ClassifierTools.loadData(dataDir + dataset + "/" + dataset
+					+ "_TEST");
+
+			int num_class = train.numClasses();
+
+			String trainPath = "middleFiles/ST/" + dataset + "_train.txt";
+			String testPath = "middleFiles/ST/" + dataset + "_test.txt";
+
+			File trainFile = new File(trainPath);
+			File testFile = new File(testPath);
+
+			ShapeletTransformWithSubclassSampleAndLFDP transform = new ShapeletTransformWithSubclassSampleAndLFDP();
+			transform.setRoundRobin(true);
+			transform.turnOffLog();
+			// construct shapelet classifiers.
+			transform.setClassValue(new BinarisedClassValue());
+			transform.setSubSeqDistance(new ImprovedOnlineSubSeqDistance());
+			transform.useCandidatePruning();
+
+			int shapletNo = train.numInstances() * 2 > 100 ? train
+					.numInstances() * 2 : 100;
+
+			transform.setNumberOfShapelets(shapletNo);
+			transform
+					.setQualityMeasure(QualityMeasures.ShapeletQualityChoice.INFORMATION_GAIN);
+
+			Instances tranTrain, tranTest;
+			if ((!trainFile.exists()) || (!testFile.exists())) {
+				tranTrain = transform.process(train);
+				tranTest = transform.process(test);
+				int trainNo = train.numInstances();
+				double[][] stTrainMatrix = new double[trainNo][tranTrain
+						.numAttributes() - 1];
+				for (int i = 0; i < trainNo; i++) {
+					Instance temp = tranTrain.instance(i);
+					for (int j = 0; j < temp.numAttributes() - 1; j++) {
+						stTrainMatrix[i][j] = temp.value(j);
+					}
+				}
+				Map map = MaxMinNormal.maxMinNormal(stTrainMatrix);
+				stTrainMatrix = (double[][]) map.get("data");
+				if (!trainFile.exists()) {
+					trainFile.createNewFile();
+					FileWriter writer = new FileWriter(trainFile, true);
+					for (int i = 0; i < trainNo; i++) {
+						Instance temp = tranTrain.instance(i);
+						String newLine = temp.classValue() + " ";
+						for (int j = 0; j < temp.numAttributes() - 1; j++) {
+							// newLine += "sh" + j + ":" + temp.value(j) + "  ";
+							newLine += "sh" + j + ":" + stTrainMatrix[i][j]
+									+ "  ";
+						}
+						newLine += System.getProperty("line.separator");
+						writer.write(newLine);
+					}
+					writer.close();
+				}
+
+				if (!testFile.exists()) {
+
+					testFile.createNewFile();
+					int testNo = train.numInstances();
+					double[][] stTestMatrix = new double[testNo][tranTrain
+							.numAttributes() - 1];
+					for (int i = 0; i < testNo; i++) {
+						Instance temp = tranTest.instance(i);
+						for (int j = 0; j < temp.numAttributes() - 1; j++) {
+							stTestMatrix[i][j] = temp.value(j);
+						}
+					}
+					double[] min = (double[]) map.get("min");
+					double[] max = (double[]) map.get("max");
+					stTestMatrix = MaxMinNormal.maxMinNormal(min, max,
+							stTestMatrix);
+					FileWriter writer = new FileWriter(testFile, true);
+					for (int i = 0; i < testNo; i++) {
+						Instance temp = tranTest.instance(i);
+						String newLine = temp.classValue() + " ";
+						for (int j = 0; j < temp.numAttributes() - 1; j++) {
+							// newLine += "sh" + j + ":" + temp.value(j) + "  ";
+							newLine += "sh" + j + ":" + stTestMatrix[i][j]
+									+ "  ";
+						}
+						newLine += System.getProperty("line.separator");
+						writer.write(newLine);
+					}
+					writer.close();
+				}
+
+			}
 			
-			
-			
+			XGTrainTime(dataset, num_class, trainPath, testPath,
+						dateString);
+
 		}
 
 	}

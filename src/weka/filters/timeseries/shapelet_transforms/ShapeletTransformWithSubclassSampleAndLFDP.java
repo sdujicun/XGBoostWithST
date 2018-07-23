@@ -1154,9 +1154,8 @@ public class ShapeletTransformWithSubclassSampleAndLFDP extends SimpleBatchFilte
 	}
 
 	public static void main(String[] args) {
-		String[] problems ={"conductance"};
-//		 String[] problems = {"TwoLeadECG", "ChlorineConcentration", "Coffee",
-//		 "ECGFiveDays", "MoteStrain", "Trace", "TwoLeadECG" };
+		 String[] problems = {"ChlorineConcentration", "Coffee",
+		 "ECGFiveDays", "MoteStrain", "Trace", "TwoLeadECG" };
 
 
 		

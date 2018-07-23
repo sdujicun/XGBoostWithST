@@ -1235,12 +1235,12 @@ public class ShapeletTransformBasedOnLFDP extends SimpleBatchFilter {
 			transform.setNumberOfShapelets(shapletNo);
 			transform
 					.setQualityMeasure(QualityMeasures.ShapeletQualityChoice.INFORMATION_GAIN);
-			// long d1 = System.nanoTime();
+			//long d1 = System.nanoTime();
 			Instances tranTrain = transform.process(train);
 			Instances tranTest = transform.process(test);
-			// long d2 = System.nanoTime();
+			//long d2 = System.nanoTime();
 			// ArrayList<Shapelet> sh = transform.getShapelets();
-			// System.out.print((d2 - d1) * 0.000000001+ "\t");
+			//System.out.print("Shapelet Selection Time\t"+(d2 - d1) * 0.000000001+ "\t");
 
 			
 			// 1C45
@@ -1295,6 +1295,50 @@ public class ShapeletTransformBasedOnLFDP extends SimpleBatchFilter {
 			we.buildClassifier(tranTrain);
 			accuracy = ClassifierTools.accuracy(tranTest, we);
 			System.out.println(accuracy + "\t");
+
+		} catch (Exception ex) {
+			Logger.getLogger(ShapeletTransformBasedOnLFDP.class.getName()).log(
+					Level.SEVERE, null, ex);
+		}
+	}
+	
+	public static void timeExperiment(String problem) {
+		try {
+			final String resampleLocation = DataSets.problemPath;
+			final String dataset = problem;
+			final String filePath = resampleLocation + File.separator + dataset
+					+ File.separator + dataset;
+			Instances test, train;
+			test = utilities.ClassifierTools.loadData(filePath + "_TEST");
+			train = utilities.ClassifierTools.loadData(filePath + "_TRAIN");
+			// use fold as the seed.
+			// train = InstanceTools.subSample(train, 100, fold);
+			ShapeletTransformBasedOnLFDP transform = new ShapeletTransformBasedOnLFDP();
+			transform.setRoundRobin(true);
+			transform.turnOffLog();
+			// construct shapelet classifiers.
+			transform.setClassValue(new BinarisedClassValue());
+			transform.setSubSeqDistance(new ImprovedOnlineSubSeqDistance());
+			transform.useCandidatePruning();
+			int shapletNo = train.numInstances() * 2 > 100 ? train
+					.numInstances() * 2 : 100;
+
+			transform.setNumberOfShapelets(shapletNo);
+			transform
+					.setQualityMeasure(QualityMeasures.ShapeletQualityChoice.INFORMATION_GAIN);
+			long d1 = System.nanoTime();
+			Instances tranTrain = transform.process(train);
+			long d2 = System.nanoTime();
+			// ArrayList<Shapelet> sh = transform.getShapelets();
+			System.out.print("Shapelet Selection Time\t"+(d2 - d1) * 0.000000001+ "\t");
+			
+			// 8WeightedEnsemble
+			WeightedEnsemble we = new WeightedEnsemble();
+			d1 = System.nanoTime();
+			we.buildClassifier(tranTrain);
+			d2 = System.nanoTime();
+			System.out.println("Train Time\t"+(d2 - d1) * 0.000000001+ "\t");
+			
 
 		} catch (Exception ex) {
 			Logger.getLogger(ShapeletTransformBasedOnLFDP.class.getName()).log(
